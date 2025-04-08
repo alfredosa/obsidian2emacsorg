@@ -1,8 +1,9 @@
 // sync.rs
-use std::fs;
-use std::path::PathBuf;
-use walkdir::WalkDir;
+use std::fs::{self, create_dir_all};
+use std::io;
+use std::path::{Path, PathBuf};
 use std::process::exit;
+use walkdir::WalkDir;
 
 pub struct SyncParams {
     pub source: PathBuf,
@@ -35,23 +36,83 @@ impl SyncParams {
     }
 }
 
-fn walk_directory(path: &PathBuf) {
-    for entry in WalkDir::new(path) {
+fn walk_and_find_relevance(source: &Path) -> bool {
+    for entry in WalkDir::new(source) {
         match entry {
             Ok(entry) => {
-                println!("{}", entry.path().display());
+                if entry.path().ends_with(".md") {
+                    return true;
+                }
             }
             Err(err) => {
-                eprintln!("Error: {}", err);
+                eprintln!("{err}");
+                return false;
             }
         }
     }
+
+    return false;
+}
+
+fn walk_directory(source: &PathBuf, dest: &PathBuf) -> io::Result<()> {
+    // Create the destination directory if it doesn't exist
+    create_dir_all(dest)?;
+    
+    // Use a single WalkDir iterator and handle errors properly
+    let walker = WalkDir::new(source).into_iter();
+    
+    for entry in walker {
+        match entry {
+            Ok(entry) => {
+                let path = entry.path();
+                
+                // Calculate the relative path correctly
+                let relative_path = match path.strip_prefix(source) {
+                    Ok(rel_path) => rel_path,
+                    Err(e) => {
+                        eprintln!("Failed to strip prefix: {}", e);
+                        continue;
+                    }
+                };
+                
+                let target_path = dest.join(relative_path);
+                
+                if path.is_dir() {
+                    // Only create directories that have .md files
+                    // (check handled inside walk_and_find_relevance)
+                    if walk_and_find_relevance(path) {
+                        create_dir_all(&target_path)?;
+                        println!("Created directory: {}", target_path.display());
+                    }
+                } else if path.is_file() && path.extension().map_or(false, |ext| ext == "md") {
+                    let org_path = target_path.with_extension("org");
+                    println!("Converting {} to {}", path.display(), org_path.display());
+                    
+                    // Create the .org file (add your conversion logic here)
+                    let _ = fs::File::create(org_path)?;
+                }
+            },
+            Err(err) => {
+                eprintln!("Error walking directory: {}", err);
+                return Err(io::Error::new(io::ErrorKind::Other, format!("WalkDir error: {}", err)));
+            }
+        }
+    }
+    
+    Ok(())
 }
 
 /// Start the sync, it should after the cli provides relevant details
 pub fn start_sync(params: &SyncParams) {
-    if !params.valid() {exit(1)}
-    walk_directory(&params.source);
-
-    // println!("starting sync at @Mon Apr  7 12:38:01 2025");
+    if !params.valid() {
+        exit(1)
+    }
+    
+    // Properly handle errors from walk_directory
+    if let Err(e) = walk_directory(&params.source, &params.destination) {
+        eprintln!("Failed to sync directories: {}", e);
+        exit(1);
+    }
+    
+    println!("Sync completed successfully");
 }
