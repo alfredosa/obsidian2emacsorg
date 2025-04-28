@@ -1,4 +1,3 @@
-// sync.rs
 use std::fs::{self, create_dir_all};
 use std::io;
 use std::path::{Path, PathBuf};
@@ -55,17 +54,15 @@ fn walk_and_find_relevance(source: &Path) -> bool {
 }
 
 fn walk_directory(source: &PathBuf, dest: &PathBuf) -> io::Result<()> {
-    // Create the destination directory if it doesn't exist
     create_dir_all(dest)?;
-    
-    // Use a single WalkDir iterator and handle errors properly
+
     let walker = WalkDir::new(source).into_iter();
-    
+
     for entry in walker {
         match entry {
             Ok(entry) => {
                 let path = entry.path();
-                
+
                 // Calculate the relative path correctly
                 let relative_path = match path.strip_prefix(source) {
                     Ok(rel_path) => rel_path,
@@ -74,9 +71,9 @@ fn walk_directory(source: &PathBuf, dest: &PathBuf) -> io::Result<()> {
                         continue;
                     }
                 };
-                
+
                 let target_path = dest.join(relative_path);
-                
+
                 if path.is_dir() {
                     // Only create directories that have .md files
                     // (check handled inside walk_and_find_relevance)
@@ -87,18 +84,21 @@ fn walk_directory(source: &PathBuf, dest: &PathBuf) -> io::Result<()> {
                 } else if path.is_file() && path.extension().map_or(false, |ext| ext == "md") {
                     let org_path = target_path.with_extension("org");
                     println!("Converting {} to {}", path.display(), org_path.display());
-                    
+
                     // Create the .org file (add your conversion logic here)
                     let _ = fs::File::create(org_path)?;
                 }
-            },
+            }
             Err(err) => {
                 eprintln!("Error walking directory: {}", err);
-                return Err(io::Error::new(io::ErrorKind::Other, format!("WalkDir error: {}", err)));
+                return Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    format!("WalkDir error: {}", err),
+                ));
             }
         }
     }
-    
+
     Ok(())
 }
 
@@ -107,12 +107,11 @@ pub fn start_sync(params: &SyncParams) {
     if !params.valid() {
         exit(1)
     }
-    
-    // Properly handle errors from walk_directory
+
     if let Err(e) = walk_directory(&params.source, &params.destination) {
         eprintln!("Failed to sync directories: {}", e);
         exit(1);
     }
-    
+
     println!("Sync completed successfully");
 }
